@@ -138,49 +138,93 @@ pub struct Si47xxDevice<T: I2c, R: OutputPin, const A: u8 = 0x11> {
     reset_pin: R,
 }
 
-pub trait Si47xx {
-    // Define trait methods here if needed
-    async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error>;
-    async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error>;
+/// Si47xx device enum for AM and FM modes
+/// This enum encapsulates the Si47xxDevice for both AM and FM modes,
+/// allowing users to switch between modes while using the same interface.
+#[derive(Debug)]
+pub enum Si47xx<T: I2c, R: OutputPin, const A: u8> {
+    Am(Si47xxDevice<T, R, A>),
+    Fm(Si47xxDevice<T, R, A>),
 }
 
-pub struct Si47xxFm<'d, T: I2c, R: OutputPin, const A: u8> {
-    device: &'d mut Si47xxDevice<T, R, A>,
-}
-
-impl<'d, T: I2c, R: OutputPin, const A: u8> Si47xxFm<'d, T, R, A> {
-    pub fn new(device: &'d mut Si47xxDevice<T, R, A>) -> Self {
-        Self { device }
+impl<T: I2c, R: OutputPin, const A: u8> Si47xx<T, R, A> {
+    pub async fn revision_get(&mut self) -> Result<Si47xxRevision, Error> {
+        match self {
+            Si47xx::Am(device) => device.revision_get().await,
+            Si47xx::Fm(device) => device.revision_get().await,
+        }
     }
-}
-
-impl<'d, T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxFm<'d, T, R, A> {
-    async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
-        self.device.fm_seek_up().await
+    pub async fn power_down(&mut self) -> Result<(), Error> {
+        match self {
+            Si47xx::Am(device) => device.power_down().await,
+            Si47xx::Fm(device) => device.power_down().await,
+        }
     }
-
-    async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
-        self.device.fm_tune_frequency(frequency).await
+    pub async fn reset(&mut self) {
+        match self {
+            Si47xx::Am(device) => device.reset().await,
+            Si47xx::Fm(device) => device.reset().await,
+        }
     }
-}
-
-pub struct Si47xxAm<'d, T: I2c, R: OutputPin, const A: u8> {
-    device: &'d mut Si47xxDevice<T, R, A>,
-}
-
-impl<'d, T: I2c, R: OutputPin, const A: u8> Si47xxAm<'d, T, R, A> {
-    pub fn new(device: &'d mut Si47xxDevice<T, R, A>) -> Self {
-        Self { device }
+    pub async fn sound_on(&mut self) -> Result<(), Error> {
+        match self {
+            Si47xx::Am(device) => device.sound_on().await,
+            Si47xx::Fm(device) => device.sound_on().await,
+        }
     }
-}
-
-impl<'d, T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxAm<'d, T, R, A> {
-    async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
-        self.device.am_seek_up().await
+    pub async fn sound_off(&mut self) -> Result<(), Error> {
+        match self {
+            Si47xx::Am(device) => device.sound_off().await,
+            Si47xx::Fm(device) => device.sound_off().await,
+        }
     }
-
-    async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
-        self.device.am_tune_frequency(frequency).await
+    pub async fn volume_set(&mut self, volume: u8) -> Result<(), Error> {
+        match self {
+            Si47xx::Am(device) => device.volume_set(volume).await,
+            Si47xx::Fm(device) => device.volume_set(volume).await,
+        }
+    }
+    pub async fn volume_up(&mut self) -> Result<(), Error> {
+        match self {
+            Si47xx::Am(device) => device.volume_up().await,
+            Si47xx::Fm(device) => device.volume_up().await,
+        }
+    }
+    pub async fn volume_down(&mut self) -> Result<(), Error> {
+        match self {
+            Si47xx::Am(device) => device.volume_down().await,
+            Si47xx::Fm(device) => device.volume_down().await,
+        }
+    }
+    pub async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error> {
+        match self {
+            Si47xx::Am(device) => device.am_tune_status_get().await,
+            Si47xx::Fm(device) => device.fm_tune_status_get().await,
+        }
+    }
+    pub async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
+        match self {
+            Si47xx::Am(device) => device.am_seek_up().await,
+            Si47xx::Fm(device) => device.fm_seek_up().await,
+        }
+    }
+    pub async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
+        match self {
+            Si47xx::Am(device) => device.am_tune_frequency(frequency).await,
+            Si47xx::Fm(device) => device.fm_tune_frequency(frequency).await,
+        }
+    }
+    pub async fn am(self) -> Result<Si47xx<T, R, A>, Error> {
+        match self {
+            Si47xx::Am(_) => Ok(self),
+            Si47xx::Fm(device) => device.am().await,
+        }
+    }
+    pub async fn fm(self) -> Result<Si47xx<T, R, A>, Error> {
+        match self {
+            Si47xx::Am(device) => device.fm().await,
+            Si47xx::Fm(_) => Ok(self),
+        }
     }
 }
 
@@ -191,12 +235,16 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
         Self { i2c, reset_pin }
     }
 
-    pub fn am(&mut self) -> impl Si47xx {
-        Si47xxAm::new(self)
+    pub async fn am(mut self) -> Result<Si47xx<T, R, A>, Error> {
+        self.power_down().await?;
+        self.init_am().await?;
+        Ok(Si47xx::Am(self))
     }
 
-    pub fn fm(&mut self) -> impl Si47xx {
-        Si47xxFm::new(self)
+    pub async fn fm(mut self) -> Result<Si47xx<T, R, A>, Error> {
+        self.power_down().await?;
+        self.init_fm().await?;
+        Ok(Si47xx::Fm(self))
     }
 
     /// Get device revision information
@@ -505,5 +553,11 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
             return Err(Error::InitError);
         }
         Ok(())
+    }
+
+    pub async fn power_down(&mut self) -> Result<(), Error> {
+        let args: [u8; 1] = [Si47xxCmd::PWRDOWN_CMD];
+        let mut status: [u8; 1] = [0];
+        self.cmd_send(&args, &mut status).await
     }
 }
