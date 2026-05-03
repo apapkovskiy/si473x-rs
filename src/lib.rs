@@ -68,14 +68,20 @@ pub struct Si47xxTuneStatus {
     pub multipath: u8,
 }
 
+pub enum Si47xxTuneResolution {
+    AmModeLsbKhz = 1,
+    FmModeLsbKhz = 10,
+}
+
 impl Si47xxTuneStatus {
-    pub fn from_bytes(data: &[u8]) -> Self {
+    const KHZ_TO_MHZ: f32 = 1000.0;
+    pub fn from_bytes(data: &[u8], resolution: Si47xxTuneResolution) -> Self {
         let freq_h: u16 = data[1] as u16;
         let freq_l: u16 = data[2] as u16;
         let freq: u16 = (freq_h << 8) | freq_l;
         Self {
             valid: (data[0] & 0x01) != 0,
-            frequency: freq as f32 / 100.0,
+            frequency: (freq as f32 * (resolution as i32 as f32)) / Self::KHZ_TO_MHZ,
             rssi: data[3],
             snr: data[4],
             multipath: data[5],
@@ -514,6 +520,7 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
         self.cmd_send(&args, &mut resp).await?;
         Ok(Si47xxTuneStatus::from_bytes(
             &resp[Si47xxCmd::STATUS_RSP_SIZE..],
+            Si47xxTuneResolution::FmModeLsbKhz,
         ))
     }
 
@@ -563,6 +570,7 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
         self.cmd_send(&args, &mut resp).await?;
         Ok(Si47xxTuneStatus::from_bytes(
             &resp[Si47xxCmd::STATUS_RSP_SIZE..],
+            Si47xxTuneResolution::AmModeLsbKhz,
         ))
     }
 
@@ -589,7 +597,7 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
         if !(0.52..=28.0).contains(&frequency) {
             return Err(Error::InvalidParameter);
         }
-        let freq_value: u16 = (frequency * 100.0) as u16;
+        let freq_value: u16 = (frequency * 1000.0) as u16;
         let args: [u8; 4] = [
             Si47xxCmd::AM_TUNE_FREQ_CMD,
             0,
@@ -671,5 +679,52 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
         let args: [u8; 1] = [Si47xxCmd::PWRDOWN_CMD];
         let mut status: [u8; 1] = [0];
         self.cmd_send(&args, &mut status).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_frequency_eq(actual: f32, expected: f32) {
+        assert!((actual - expected).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn tune_status_from_bytes_decodes_fm_resolution() {
+        let status = Si47xxTuneStatus::from_bytes(
+            &[0x01, 0x28, 0x96, 42, 31, 7],
+            Si47xxTuneResolution::FmModeLsbKhz,
+        );
+
+        assert!(status.valid);
+        assert_frequency_eq(status.frequency, 103.9);
+        assert_eq!(status.rssi, 42);
+        assert_eq!(status.snr, 31);
+        assert_eq!(status.multipath, 7);
+    }
+
+    #[test]
+    fn tune_status_from_bytes_decodes_am_resolution() {
+        let status = Si47xxTuneStatus::from_bytes(
+            &[0x00, 0x06, 0x03, 55, 18, 2],
+            Si47xxTuneResolution::AmModeLsbKhz,
+        );
+
+        assert!(!status.valid);
+        assert_frequency_eq(status.frequency, 1.539);
+        assert_eq!(status.rssi, 55);
+        assert_eq!(status.snr, 18);
+        assert_eq!(status.multipath, 2);
+    }
+
+    #[test]
+    fn tune_status_from_bytes_uses_only_bit_zero_for_valid_flag() {
+        let status = Si47xxTuneStatus::from_bytes(
+            &[0xfe, 0x00, 0x00, 0, 0, 0],
+            Si47xxTuneResolution::FmModeLsbKhz,
+        );
+
+        assert!(!status.valid);
     }
 }
