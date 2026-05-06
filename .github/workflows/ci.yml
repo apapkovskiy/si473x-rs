@@ -42,6 +42,10 @@ jobs:
       - name: Docs
         run: cargo doc --no-default-features --no-deps
 
+      - name: Generate index.html file
+        run: |
+            echo "<meta http-equiv=refresh content=0;url=si473x/index.html>" > target/doc/index.html
+
       - name: Upload docs artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
