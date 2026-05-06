@@ -6,8 +6,10 @@ use embedded_hal::digital::OutputPin;
 use embedded_hal::i2c::Error as I2cErrorTrait;
 use embedded_hal_async::i2c::I2c;
 
+mod band;
 mod property;
 
+pub use band::AmLwSwBand;
 pub use property::Si47xxProperty;
 use property::{AM_ONLY_PROPERTIES, FM_ONLY_PROPERTIES, SHARED_PROPERTIES};
 
@@ -25,8 +27,6 @@ pub enum Error {
     /// Device is powered down
     PoweredDown,
 }
-
-pub enum AmLwSwBands {}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
