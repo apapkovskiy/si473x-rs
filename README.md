@@ -2,6 +2,8 @@
 
 Async, `no_std` Rust driver for the Si473x AM/FM/SW/LW radio receivers. Built on `embedded-hal-async` for I2C and a generic `OutputPin` for the reset line.
 
+API docs: [GitHub Pages](https://apapkovskiy.github.io/si473x-rs/)
+
 ## Features
 - `no_std` compatible
 - Async I2C command interface
