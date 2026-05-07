@@ -40,6 +40,12 @@ It is intentionally concise and practical. We can extend it over time.
 - Avoid mode-mixing mistakes by using property group helpers.
 - Do not commit generated or local reference artifacts unless explicitly requested.
 
+## Local Skills
+
+- Added local skill: `.agents/skills/pullrequest/SKILL.md`.
+- Purpose: open GitHub PRs with consistent flow (`git fetch origin`, base branch detect `master`/`main`, commit list against base, minimal PR body with Summary + Commits, `gh pr create`).
+- Helper script: `.agents/skills/pullrequest/scripts/commits_for_pr.sh` to generate commit-title bullets from `origin/<base>..HEAD`.
+
 ## Open Topics / Backlog Ideas
 
 - Fill out `AmLwSwBands` with clear band presets (US AM, EU/ASIA AM, SW, LW).
