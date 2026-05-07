@@ -72,6 +72,10 @@ pub enum AmLwSwBand {
     Ham10m(BandRangeKhz),
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct ParseAmLwSwBandError;
+
 impl AmLwSwBand {
     pub const LW_BROADCAST: Self = Self::LwBroadcast(BandRangeKhz {
         bottom_khz: 153,
@@ -245,9 +249,49 @@ impl AmLwSwBand {
     }
 }
 
+impl core::str::FromStr for AmLwSwBand {
+    type Err = ParseAmLwSwBandError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "lw_broadcast" => Ok(Self::LW_BROADCAST),
+            "am_broadcast" => Ok(Self::AM_BROADCAST),
+            "sw_broadcast" => Ok(Self::SW_BROADCAST),
+            "sw_120m" => Ok(Self::SW_120M),
+            "sw_90m" => Ok(Self::SW_90M),
+            "sw_75m" => Ok(Self::SW_75M),
+            "sw_60m" => Ok(Self::SW_60M),
+            "sw_49m" => Ok(Self::SW_49M),
+            "sw_41m" => Ok(Self::SW_41M),
+            "sw_31m" => Ok(Self::SW_31M),
+            "sw_25m" => Ok(Self::SW_25M),
+            "sw_22m" => Ok(Self::SW_22M),
+            "sw_19m" => Ok(Self::SW_19M),
+            "sw_16m" => Ok(Self::SW_16M),
+            "sw_15m" => Ok(Self::SW_15M),
+            "sw_13m" => Ok(Self::SW_13M),
+            "sw_11m" => Ok(Self::SW_11M),
+            "ham_2200m" => Ok(Self::HAM_2200M),
+            "ham_630m" => Ok(Self::HAM_630M),
+            "ham_160m" => Ok(Self::HAM_160M),
+            "ham_80m" => Ok(Self::HAM_80M),
+            "ham_60m" => Ok(Self::HAM_60M),
+            "ham_40m" => Ok(Self::HAM_40M),
+            "ham_30m" => Ok(Self::HAM_30M),
+            "ham_20m" => Ok(Self::HAM_20M),
+            "ham_17m" => Ok(Self::HAM_17M),
+            "ham_15m" => Ok(Self::HAM_15M),
+            "ham_12m" => Ok(Self::HAM_12M),
+            "ham_10m" => Ok(Self::HAM_10M),
+            _ => Err(ParseAmLwSwBandError),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::AmLwSwBand;
+    use core::str::FromStr;
 
     #[test]
     fn broadcast_band_edges_are_ordered() {
@@ -261,5 +305,28 @@ mod tests {
         assert!(AmLwSwBand::HAM_160M.bottom_khz() < AmLwSwBand::HAM_160M.top_khz());
         assert!(AmLwSwBand::HAM_20M.bottom_khz() < AmLwSwBand::HAM_20M.top_khz());
         assert!(AmLwSwBand::HAM_10M.bottom_khz() < AmLwSwBand::HAM_10M.top_khz());
+    }
+
+    #[test]
+    fn parses_known_band_names() {
+        assert_eq!(
+            AmLwSwBand::from_str("lw_broadcast").unwrap(),
+            AmLwSwBand::LW_BROADCAST
+        );
+        assert_eq!(AmLwSwBand::from_str("sw_31m").unwrap(), AmLwSwBand::SW_31M);
+        assert_eq!(
+            AmLwSwBand::from_str("ham_20m").unwrap(),
+            AmLwSwBand::HAM_20M
+        );
+        assert_eq!(
+            AmLwSwBand::from_str("  sw_49m ").unwrap(),
+            AmLwSwBand::SW_49M
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_band_names() {
+        assert!(AmLwSwBand::from_str("fm").is_err());
+        assert!(AmLwSwBand::from_str("sw_50m").is_err());
     }
 }
