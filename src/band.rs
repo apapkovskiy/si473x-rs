@@ -288,10 +288,87 @@ impl core::str::FromStr for AmLwSwBand {
     }
 }
 
+impl core::fmt::Display for AmLwSwBand {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let name = match self {
+            Self::LwBroadcast(_) => "lw_broadcast",
+            Self::AmBroadcast(_) => "am_broadcast",
+            Self::SwBroadcast(_) => "sw_broadcast",
+            Self::Sw120m(_) => "sw_120m",
+            Self::Sw90m(_) => "sw_90m",
+            Self::Sw75m(_) => "sw_75m",
+            Self::Sw60m(_) => "sw_60m",
+            Self::Sw49m(_) => "sw_49m",
+            Self::Sw41m(_) => "sw_41m",
+            Self::Sw31m(_) => "sw_31m",
+            Self::Sw25m(_) => "sw_25m",
+            Self::Sw22m(_) => "sw_22m",
+            Self::Sw19m(_) => "sw_19m",
+            Self::Sw16m(_) => "sw_16m",
+            Self::Sw15m(_) => "sw_15m",
+            Self::Sw13m(_) => "sw_13m",
+            Self::Sw11m(_) => "sw_11m",
+            Self::Ham2200m(_) => "ham_2200m",
+            Self::Ham630m(_) => "ham_630m",
+            Self::Ham160m(_) => "ham_160m",
+            Self::Ham80m(_) => "ham_80m",
+            Self::Ham60m(_) => "ham_60m",
+            Self::Ham40m(_) => "ham_40m",
+            Self::Ham30m(_) => "ham_30m",
+            Self::Ham20m(_) => "ham_20m",
+            Self::Ham17m(_) => "ham_17m",
+            Self::Ham15m(_) => "ham_15m",
+            Self::Ham12m(_) => "ham_12m",
+            Self::Ham10m(_) => "ham_10m",
+        };
+
+        write!(
+            f,
+            "{} ({:.3}-{:.3} MHz)",
+            name,
+            self.bottom_mhz(),
+            self.top_mhz()
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::AmLwSwBand;
+    use core::fmt;
+    use core::fmt::Write as _;
     use core::str::FromStr;
+
+    struct FixedBuf {
+        bytes: [u8; 64],
+        len: usize,
+    }
+
+    impl FixedBuf {
+        const fn new() -> Self {
+            Self {
+                bytes: [0; 64],
+                len: 0,
+            }
+        }
+
+        fn as_str(&self) -> &str {
+            core::str::from_utf8(&self.bytes[..self.len]).unwrap()
+        }
+    }
+
+    impl fmt::Write for FixedBuf {
+        fn write_str(&mut self, s: &str) -> fmt::Result {
+            let src = s.as_bytes();
+            let end = self.len + src.len();
+            if end > self.bytes.len() {
+                return Err(fmt::Error);
+            }
+            self.bytes[self.len..end].copy_from_slice(src);
+            self.len = end;
+            Ok(())
+        }
+    }
 
     #[test]
     fn broadcast_band_edges_are_ordered() {
@@ -328,5 +405,12 @@ mod tests {
     fn rejects_unknown_band_names() {
         assert!(AmLwSwBand::from_str("fm").is_err());
         assert!(AmLwSwBand::from_str("sw_50m").is_err());
+    }
+
+    #[test]
+    fn display_includes_name_and_mhz_range() {
+        let mut s = FixedBuf::new();
+        write!(&mut s, "{}", AmLwSwBand::SW_31M).unwrap();
+        assert_eq!(s.as_str(), "sw_31m (9.400-9.900 MHz)");
     }
 }
