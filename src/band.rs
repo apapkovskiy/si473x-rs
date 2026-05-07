@@ -200,6 +200,38 @@ impl AmLwSwBand {
         top_khz: 29700,
     });
 
+    pub const ALL_KNOWN_BANDS: [Self; 29] = [
+        Self::LW_BROADCAST,
+        Self::AM_BROADCAST,
+        Self::SW_BROADCAST,
+        Self::SW_120M,
+        Self::SW_90M,
+        Self::SW_75M,
+        Self::SW_60M,
+        Self::SW_49M,
+        Self::SW_41M,
+        Self::SW_31M,
+        Self::SW_25M,
+        Self::SW_22M,
+        Self::SW_19M,
+        Self::SW_16M,
+        Self::SW_15M,
+        Self::SW_13M,
+        Self::SW_11M,
+        Self::HAM_2200M,
+        Self::HAM_630M,
+        Self::HAM_160M,
+        Self::HAM_80M,
+        Self::HAM_60M,
+        Self::HAM_40M,
+        Self::HAM_30M,
+        Self::HAM_20M,
+        Self::HAM_17M,
+        Self::HAM_15M,
+        Self::HAM_12M,
+        Self::HAM_10M,
+    ];
+
     pub const fn range(self) -> BandRangeKhz {
         match self {
             Self::Unknown(range)
@@ -253,6 +285,45 @@ impl AmLwSwBand {
     /// Upper edge of the band in MHz.
     pub const fn top_mhz(self) -> f32 {
         self.top_khz() as f32 / 1000.0
+    }
+
+    pub const fn unknown_with_range(bottom_khz: u16, top_khz: u16) -> Self {
+        Self::Unknown(BandRangeKhz {
+            bottom_khz,
+            top_khz,
+        })
+    }
+
+    pub const fn from_bottom_top_khz(bottom_khz: u16, top_khz: u16) -> Self {
+        if bottom_khz > top_khz {
+            return Self::unknown_with_range(bottom_khz, top_khz);
+        }
+
+        let mut i = 0;
+        let mut best = Self::unknown_with_range(bottom_khz, top_khz);
+        // Bands overlap (e.g. `sw_broadcast` contains many SW sub-bands), so we
+        // keep the narrowest containing range to return the most specific band.
+        let mut best_width = u16::MAX;
+        while i < Self::ALL_KNOWN_BANDS.len() {
+            let band = Self::ALL_KNOWN_BANDS[i];
+            // `sw_broadcast` is intentionally excluded: it is a very wide umbrella
+            // range and would hide more useful sub-band detection behavior.
+            if let Self::SwBroadcast(_) = band {
+                i += 1;
+                continue;
+            }
+            let range = band.range();
+            if bottom_khz >= range.bottom_khz && top_khz <= range.top_khz {
+                let width = range.top_khz - range.bottom_khz;
+                if width < best_width {
+                    best = band;
+                    best_width = width;
+                }
+            }
+            i += 1;
+        }
+
+        best
     }
 }
 
@@ -421,5 +492,37 @@ mod tests {
         let mut s = FixedBuf::new();
         write!(&mut s, "{}", AmLwSwBand::SW_31M).unwrap();
         assert_eq!(s.as_str(), "sw_31m (9.400-9.900 MHz)");
+    }
+
+    #[test]
+    fn detects_band_when_range_is_inside() {
+        assert_eq!(
+            AmLwSwBand::from_bottom_top_khz(9600, 9800),
+            AmLwSwBand::SW_31M
+        );
+        assert_eq!(
+            AmLwSwBand::from_bottom_top_khz(153, 279),
+            AmLwSwBand::LW_BROADCAST
+        );
+    }
+
+    #[test]
+    fn returns_unknown_when_range_is_outside() {
+        assert_eq!(
+            AmLwSwBand::from_bottom_top_khz(100, 120),
+            AmLwSwBand::unknown_with_range(100, 120)
+        );
+        assert_eq!(
+            AmLwSwBand::from_bottom_top_khz(2300, 26100),
+            AmLwSwBand::unknown_with_range(2300, 26100)
+        );
+        assert_eq!(
+            AmLwSwBand::from_bottom_top_khz(30000, 31000),
+            AmLwSwBand::unknown_with_range(30000, 31000)
+        );
+        assert_eq!(
+            AmLwSwBand::from_bottom_top_khz(10000, 9000),
+            AmLwSwBand::unknown_with_range(10000, 9000)
+        );
     }
 }
