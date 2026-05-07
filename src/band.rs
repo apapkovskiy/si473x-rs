@@ -12,6 +12,8 @@ pub struct BandRangeKhz {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AmLwSwBand {
+    /// Unknown or custom band placeholder.
+    Unknown(BandRangeKhz),
     /// Longwave broadcast band (Region 1 nominal plan).
     LwBroadcast(BandRangeKhz),
     /// Medium-wave AM broadcast band (global superset).
@@ -77,6 +79,10 @@ pub enum AmLwSwBand {
 pub struct ParseAmLwSwBandError;
 
 impl AmLwSwBand {
+    pub const UNKNOWN: Self = Self::Unknown(BandRangeKhz {
+        bottom_khz: 0,
+        top_khz: 0,
+    });
     pub const LW_BROADCAST: Self = Self::LwBroadcast(BandRangeKhz {
         bottom_khz: 153,
         top_khz: 279,
@@ -196,7 +202,8 @@ impl AmLwSwBand {
 
     pub const fn range(self) -> BandRangeKhz {
         match self {
-            Self::LwBroadcast(range)
+            Self::Unknown(range)
+            | Self::LwBroadcast(range)
             | Self::AmBroadcast(range)
             | Self::SwBroadcast(range)
             | Self::Sw120m(range)
@@ -254,6 +261,7 @@ impl core::str::FromStr for AmLwSwBand {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
+            "unknown" => Ok(Self::UNKNOWN),
             "lw_broadcast" => Ok(Self::LW_BROADCAST),
             "am_broadcast" => Ok(Self::AM_BROADCAST),
             "sw_broadcast" => Ok(Self::SW_BROADCAST),
@@ -283,7 +291,7 @@ impl core::str::FromStr for AmLwSwBand {
             "ham_15m" => Ok(Self::HAM_15M),
             "ham_12m" => Ok(Self::HAM_12M),
             "ham_10m" => Ok(Self::HAM_10M),
-            _ => Err(ParseAmLwSwBandError),
+            _ => Ok(Self::UNKNOWN),
         }
     }
 }
@@ -291,6 +299,7 @@ impl core::str::FromStr for AmLwSwBand {
 impl core::fmt::Display for AmLwSwBand {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let name = match self {
+            Self::Unknown(_) => "unknown",
             Self::LwBroadcast(_) => "lw_broadcast",
             Self::AmBroadcast(_) => "am_broadcast",
             Self::SwBroadcast(_) => "sw_broadcast",
@@ -402,9 +411,9 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_band_names() {
-        assert!(AmLwSwBand::from_str("fm").is_err());
-        assert!(AmLwSwBand::from_str("sw_50m").is_err());
+    fn unknown_input_maps_to_unknown_band() {
+        assert_eq!(AmLwSwBand::from_str("fm").unwrap(), AmLwSwBand::UNKNOWN);
+        assert_eq!(AmLwSwBand::from_str("sw_50m").unwrap(), AmLwSwBand::UNKNOWN);
     }
 
     #[test]
