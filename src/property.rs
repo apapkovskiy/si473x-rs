@@ -1,3 +1,74 @@
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Volume(u8);
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct VolumeOutOfRange;
+
+impl Volume {
+    pub const MIN: u8 = 0;
+    pub const MAX: u8 = 100;
+    pub(crate) const DEVICE_MAX: u16 = 63;
+
+    pub const fn new(value: u8) -> Option<Self> {
+        if value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+
+    pub(crate) const fn from_raw_value(value: u16) -> Option<Self> {
+        if value <= Self::DEVICE_MAX {
+            Self::new(((value * 100) / Self::DEVICE_MAX) as u8)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) const fn to_raw_value(self) -> u16 {
+        (self.0 as u16 * Self::DEVICE_MAX) / 100
+    }
+
+    /// Increase volume by 10 percentage points.
+    ///
+    /// Saturates at `100%`.
+    pub const fn up(self) -> Self {
+        let increased = self.0.saturating_add(10);
+        if increased > Self::MAX {
+            Self(Self::MAX)
+        } else {
+            Self(increased)
+        }
+    }
+
+    /// Decrease volume by 10 percentage points.
+    ///
+    /// Saturates at `0%`.
+    pub const fn down(self) -> Self {
+        Self(self.0.saturating_sub(10))
+    }
+}
+
+impl TryFrom<u8> for Volume {
+    type Error = VolumeOutOfRange;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Self::new(value).ok_or(VolumeOutOfRange)
+    }
+}
+
+impl From<Volume> for u8 {
+    fn from(value: Volume) -> Self {
+        value.get()
+    }
+}
+
 /// Si47xx device property identifiers used with `SET_PROPERTY` / `GET_PROPERTY`.
 ///
 /// Property groups in this enum:
@@ -507,3 +578,56 @@ pub(crate) const AM_ONLY_PROPERTIES: [Si47xxProperty; 19] = [
     Si47xxProperty::AmSeekTuneSnrThreshold,
     Si47xxProperty::AmSeekTuneRssiThreshold,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn volume_accepts_bounds() {
+        assert_eq!(Volume::new(Volume::MIN), Some(Volume(0)));
+        assert_eq!(Volume::new(Volume::MAX), Some(Volume(100)));
+    }
+
+    #[test]
+    fn volume_rejects_out_of_range_values() {
+        assert_eq!(Volume::new(101), None);
+        assert_eq!(Volume::try_from(255), Err(VolumeOutOfRange));
+    }
+
+    #[test]
+    fn volume_from_raw_value_maps_volume_range() {
+        assert_eq!(Volume::from_raw_value(0), Some(Volume(0)));
+        assert_eq!(Volume::from_raw_value(31), Some(Volume(49)));
+        assert_eq!(
+            Volume::from_raw_value(Volume::DEVICE_MAX),
+            Some(Volume(100))
+        );
+    }
+
+    #[test]
+    fn volume_from_raw_value_rejects_out_of_range_values() {
+        assert_eq!(Volume::from_raw_value(Volume::DEVICE_MAX + 1), None);
+    }
+
+    #[test]
+    fn volume_to_raw_value_maps_percent_range() {
+        assert_eq!(Volume(0).to_raw_value(), 0);
+        assert_eq!(Volume(50).to_raw_value(), 31);
+        assert_eq!(Volume(Volume::MAX).to_raw_value(), Volume::DEVICE_MAX);
+    }
+
+    #[test]
+    fn volume_up_saturates_at_max() {
+        assert_eq!(Volume(0).up(), Volume(10));
+        assert_eq!(Volume(90).up(), Volume(100));
+        assert_eq!(Volume(100).up(), Volume(100));
+    }
+
+    #[test]
+    fn volume_down_saturates_at_min() {
+        assert_eq!(Volume(100).down(), Volume(90));
+        assert_eq!(Volume(10).down(), Volume(0));
+        assert_eq!(Volume(0).down(), Volume(0));
+    }
+}

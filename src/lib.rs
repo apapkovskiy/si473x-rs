@@ -10,8 +10,8 @@ mod band;
 mod property;
 
 pub use band::AmLwSwBand;
-pub use property::Si47xxProperty;
 use property::{AM_ONLY_PROPERTIES, FM_ONLY_PROPERTIES, SHARED_PROPERTIES};
+pub use property::{Si47xxProperty, Volume};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[non_exhaustive]
@@ -172,11 +172,11 @@ pub trait Si47xx {
     async fn sound_off(&mut self) -> Result<(), Error>;
     /// Set the absolute audio volume level.
     /// The valid range of `volume` is 0 (mute) to 100 (max).
-    async fn volume_set(&mut self, volume: u8) -> Result<(), Error>;
+    async fn volume_set(&mut self, volume: Volume) -> Result<(), Error>;
     /// Increase the audio volume by a fixed step (e.g., 10%).
-    async fn volume_up(&mut self) -> Result<(), Error>;
+    async fn volume_up(&mut self) -> Result<Volume, Error>;
     /// Decrease the audio volume by a fixed step (e.g., 10%).
-    async fn volume_down(&mut self) -> Result<(), Error>;
+    async fn volume_down(&mut self) -> Result<Volume, Error>;
     /// Retrieve the current tuning status, including frequency, signal strength, and quality.
     async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error>;
     /// Start seeking for the next valid station in the upward frequency direction.
@@ -210,13 +210,13 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxRadio<T, R, A> {
     async fn sound_off(&mut self) -> Result<(), Error> {
         self.sound_off().await
     }
-    async fn volume_set(&mut self, volume: u8) -> Result<(), Error> {
+    async fn volume_set(&mut self, volume: Volume) -> Result<(), Error> {
         self.volume_set(volume).await
     }
-    async fn volume_up(&mut self) -> Result<(), Error> {
+    async fn volume_up(&mut self) -> Result<Volume, Error> {
         self.volume_up().await
     }
-    async fn volume_down(&mut self) -> Result<(), Error> {
+    async fn volume_down(&mut self) -> Result<Volume, Error> {
         self.volume_down().await
     }
     async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error> {
@@ -296,21 +296,21 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
-    pub async fn volume_set(&mut self, volume: u8) -> Result<(), Error> {
+    pub async fn volume_set(&mut self, volume: Volume) -> Result<(), Error> {
         match self {
             Si47xxRadio::Am(device) => device.volume_set(volume).await,
             Si47xxRadio::Fm(device) => device.volume_set(volume).await,
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
-    pub async fn volume_up(&mut self) -> Result<(), Error> {
+    pub async fn volume_up(&mut self) -> Result<Volume, Error> {
         match self {
             Si47xxRadio::Am(device) => device.volume_up().await,
             Si47xxRadio::Fm(device) => device.volume_up().await,
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
-    pub async fn volume_down(&mut self) -> Result<(), Error> {
+    pub async fn volume_down(&mut self) -> Result<Volume, Error> {
         match self {
             Si47xxRadio::Am(device) => device.volume_down().await,
             Si47xxRadio::Fm(device) => device.volume_down().await,
@@ -514,39 +514,44 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     /// `volume` specifies the volume level (0-100%)
     /// Returns `Ok(())` on success
     /// Returns `Error` on failure
-    pub async fn volume_set(&mut self, volume: u8) -> Result<(), Error> {
-        if volume > 100 {
-            return Err(Error::InvalidParameter);
-        }
-        let volume_value: u8 = ((volume as u16 * Si47xxCmd::VOLUME_MAX as u16) / 100) as u8;
-        self.property_set(Si47xxProperty::AudioVolume, volume_value as u16)
+    pub async fn volume_set(&mut self, volume: Volume) -> Result<(), Error> {
+        let volume_value = volume.to_raw_value();
+        self.property_set(Si47xxProperty::AudioVolume, volume_value)
             .await
+    }
+
+    /// Get audio volume
+    /// Returns the volume level in percent (0-100)
+    /// Returns `Error` on failure
+    pub async fn volume_get(&mut self) -> Result<Volume, Error> {
+        let volume_value = self.property_get(Si47xxProperty::AudioVolume).await?;
+        Volume::from_raw_value(volume_value).ok_or(Error::InvalidParameter)
     }
 
     /// Volume up by 10%
-    /// Returns `Ok(())` on success
+    /// Returns the new volume level in percent (0-100) on success
     /// Returns `Error` on failure
-    pub async fn volume_up(&mut self) -> Result<(), Error> {
-        let current_volume = self.property_get(Si47xxProperty::AudioVolume).await?;
-        let new_volume = if current_volume
-            > (Si47xxCmd::VOLUME_MAX as u16 - Si47xxCmd::VOLUME_MAX as u16 / 10)
-        {
-            Si47xxCmd::VOLUME_MAX as u16
-        } else {
-            current_volume + (Si47xxCmd::VOLUME_MAX as u16 / 10)
-        };
-        self.property_set(Si47xxProperty::AudioVolume, new_volume)
-            .await
+    pub async fn volume_up(&mut self) -> Result<Volume, Error> {
+        let current_raw = self.property_get(Si47xxProperty::AudioVolume).await?;
+        let volume = Volume::from_raw_value(current_raw)
+            .ok_or(Error::InvalidParameter)?
+            .up();
+        self.property_set(Si47xxProperty::AudioVolume, volume.to_raw_value())
+            .await?;
+        Ok(volume)
     }
 
     /// Volume down by 10%
-    /// Returns `Ok(())` on success
+    /// Returns the new volume level in percent (0-100) on success
     /// Returns `Error` on failure
-    pub async fn volume_down(&mut self) -> Result<(), Error> {
-        let current_volume = self.property_get(Si47xxProperty::AudioVolume).await?;
-        let new_volume = current_volume.saturating_sub(Si47xxCmd::VOLUME_MAX as u16 / 10);
-        self.property_set(Si47xxProperty::AudioVolume, new_volume)
-            .await
+    pub async fn volume_down(&mut self) -> Result<Volume, Error> {
+        let current_raw = self.property_get(Si47xxProperty::AudioVolume).await?;
+        let volume = Volume::from_raw_value(current_raw)
+            .ok_or(Error::InvalidParameter)?
+            .down();
+        self.property_set(Si47xxProperty::AudioVolume, volume.to_raw_value())
+            .await?;
+        Ok(volume)
     }
 
     /// Get FM current tuned status
