@@ -56,7 +56,7 @@ impl Si47xxRevision {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Si47xxTuneStatus {
     pub valid: bool,
