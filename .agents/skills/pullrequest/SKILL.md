@@ -9,14 +9,14 @@ Create a PR with `gh` using a deterministic flow.
 
 ## Workflow
 
-1. Fetch remote state.
-   - Run: `git fetch origin`
-
-2. Select base branch.
+1. Select base branch.
    - Prefer `master` when it exists on `origin`.
    - Otherwise use `main`.
    - Resolve with:
      - `git show-ref --verify --quiet refs/remotes/origin/master && echo master || echo main`
+
+1. Fetch remote state.
+   - Run: `git fetch origin <base>`
 
 3. List commits that will be in the PR.
    - Run: `git log --reverse --pretty=format:%s origin/<base>..HEAD`
