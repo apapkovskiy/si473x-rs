@@ -73,6 +73,15 @@ pub enum Si47xxTuneResolution {
 
 impl Si47xxTuneStatus {
     const KHZ_TO_MHZ: f32 = 1000.0;
+    pub const fn new() -> Self {
+        Self {
+            valid: false,
+            frequency: 0.0,
+            rssi: 0,
+            snr: 0,
+            multipath: 0,
+        }
+    }
     pub fn from_bytes(data: &[u8], resolution: Si47xxTuneResolution) -> Self {
         let freq_h: u16 = data[1] as u16;
         let freq_l: u16 = data[2] as u16;
