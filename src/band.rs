@@ -11,7 +11,7 @@ pub struct BandRangeKhz {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub enum AmLwSwBand {
+pub enum RadioBands {
     /// Unknown or custom band placeholder.
     Unknown(BandRangeKhz),
     /// Longwave broadcast band (Region 1 nominal plan).
@@ -76,9 +76,9 @@ pub enum AmLwSwBand {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct ParseAmLwSwBandError;
+pub struct ParseRadioBandsError;
 
-impl AmLwSwBand {
+impl RadioBands {
     pub const UNKNOWN: Self = Self::Unknown(BandRangeKhz {
         bottom_khz: 0,
         top_khz: 0,
@@ -327,8 +327,8 @@ impl AmLwSwBand {
     }
 }
 
-impl core::str::FromStr for AmLwSwBand {
-    type Err = ParseAmLwSwBandError;
+impl core::str::FromStr for RadioBands {
+    type Err = ParseRadioBandsError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
@@ -367,7 +367,7 @@ impl core::str::FromStr for AmLwSwBand {
     }
 }
 
-impl core::fmt::Display for AmLwSwBand {
+impl core::fmt::Display for RadioBands {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let name = match self {
             Self::Unknown(_) => "unknown",
@@ -414,7 +414,7 @@ impl core::fmt::Display for AmLwSwBand {
 
 #[cfg(test)]
 mod tests {
-    use super::AmLwSwBand;
+    use super::RadioBands;
     use core::fmt;
     use core::fmt::Write as _;
     use core::str::FromStr;
@@ -452,77 +452,77 @@ mod tests {
 
     #[test]
     fn broadcast_band_edges_are_ordered() {
-        assert!(AmLwSwBand::LW_BROADCAST.bottom_khz() < AmLwSwBand::LW_BROADCAST.top_khz());
-        assert!(AmLwSwBand::AM_BROADCAST.bottom_khz() < AmLwSwBand::AM_BROADCAST.top_khz());
-        assert!(AmLwSwBand::SW_BROADCAST.bottom_khz() < AmLwSwBand::SW_BROADCAST.top_khz());
+        assert!(RadioBands::LW_BROADCAST.bottom_khz() < RadioBands::LW_BROADCAST.top_khz());
+        assert!(RadioBands::AM_BROADCAST.bottom_khz() < RadioBands::AM_BROADCAST.top_khz());
+        assert!(RadioBands::SW_BROADCAST.bottom_khz() < RadioBands::SW_BROADCAST.top_khz());
     }
 
     #[test]
     fn ham_band_edges_are_ordered() {
-        assert!(AmLwSwBand::HAM_160M.bottom_khz() < AmLwSwBand::HAM_160M.top_khz());
-        assert!(AmLwSwBand::HAM_20M.bottom_khz() < AmLwSwBand::HAM_20M.top_khz());
-        assert!(AmLwSwBand::HAM_10M.bottom_khz() < AmLwSwBand::HAM_10M.top_khz());
+        assert!(RadioBands::HAM_160M.bottom_khz() < RadioBands::HAM_160M.top_khz());
+        assert!(RadioBands::HAM_20M.bottom_khz() < RadioBands::HAM_20M.top_khz());
+        assert!(RadioBands::HAM_10M.bottom_khz() < RadioBands::HAM_10M.top_khz());
     }
 
     #[test]
     fn parses_known_band_names() {
         assert_eq!(
-            AmLwSwBand::from_str("lw_broadcast").unwrap(),
-            AmLwSwBand::LW_BROADCAST
+            RadioBands::from_str("lw_broadcast").unwrap(),
+            RadioBands::LW_BROADCAST
         );
-        assert_eq!(AmLwSwBand::from_str("sw_31m").unwrap(), AmLwSwBand::SW_31M);
+        assert_eq!(RadioBands::from_str("sw_31m").unwrap(), RadioBands::SW_31M);
         assert_eq!(
-            AmLwSwBand::from_str("ham_20m").unwrap(),
-            AmLwSwBand::HAM_20M
+            RadioBands::from_str("ham_20m").unwrap(),
+            RadioBands::HAM_20M
         );
         assert_eq!(
-            AmLwSwBand::from_str("  sw_49m ").unwrap(),
-            AmLwSwBand::SW_49M
+            RadioBands::from_str("  sw_49m ").unwrap(),
+            RadioBands::SW_49M
         );
     }
 
     #[test]
     fn unknown_input_maps_to_unknown_band() {
-        assert_eq!(AmLwSwBand::from_str("fm").unwrap(), AmLwSwBand::UNKNOWN);
-        assert_eq!(AmLwSwBand::from_str("sw_50m").unwrap(), AmLwSwBand::UNKNOWN);
+        assert_eq!(RadioBands::from_str("fm").unwrap(), RadioBands::UNKNOWN);
+        assert_eq!(RadioBands::from_str("sw_50m").unwrap(), RadioBands::UNKNOWN);
     }
 
     #[test]
     fn display_includes_name_and_mhz_range() {
         let mut s = FixedBuf::new();
-        write!(&mut s, "{}", AmLwSwBand::SW_31M).unwrap();
+        write!(&mut s, "{}", RadioBands::SW_31M).unwrap();
         assert_eq!(s.as_str(), "sw_31m (9.400-9.900 MHz)");
     }
 
     #[test]
     fn detects_band_when_range_is_inside() {
         assert_eq!(
-            AmLwSwBand::from_bottom_top_khz(9600, 9800),
-            AmLwSwBand::SW_31M
+            RadioBands::from_bottom_top_khz(9600, 9800),
+            RadioBands::SW_31M
         );
         assert_eq!(
-            AmLwSwBand::from_bottom_top_khz(153, 279),
-            AmLwSwBand::LW_BROADCAST
+            RadioBands::from_bottom_top_khz(153, 279),
+            RadioBands::LW_BROADCAST
         );
     }
 
     #[test]
     fn returns_unknown_when_range_is_outside() {
         assert_eq!(
-            AmLwSwBand::from_bottom_top_khz(100, 120),
-            AmLwSwBand::unknown_with_range(100, 120)
+            RadioBands::from_bottom_top_khz(100, 120),
+            RadioBands::unknown_with_range(100, 120)
         );
         assert_eq!(
-            AmLwSwBand::from_bottom_top_khz(2300, 26100),
-            AmLwSwBand::unknown_with_range(2300, 26100)
+            RadioBands::from_bottom_top_khz(2300, 26100),
+            RadioBands::unknown_with_range(2300, 26100)
         );
         assert_eq!(
-            AmLwSwBand::from_bottom_top_khz(30000, 31000),
-            AmLwSwBand::unknown_with_range(30000, 31000)
+            RadioBands::from_bottom_top_khz(30000, 31000),
+            RadioBands::unknown_with_range(30000, 31000)
         );
         assert_eq!(
-            AmLwSwBand::from_bottom_top_khz(10000, 9000),
-            AmLwSwBand::unknown_with_range(10000, 9000)
+            RadioBands::from_bottom_top_khz(10000, 9000),
+            RadioBands::unknown_with_range(10000, 9000)
         );
     }
 }
