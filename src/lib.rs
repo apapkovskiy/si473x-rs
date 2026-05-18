@@ -9,7 +9,7 @@ use embedded_hal_async::i2c::I2c;
 mod band;
 mod property;
 
-pub use band::RadioBands;
+pub use band::RadioBand;
 use property::{AM_ONLY_PROPERTIES, FM_ONLY_PROPERTIES, SHARED_PROPERTIES};
 pub use property::{Si47xxProperty, Volume};
 
@@ -191,9 +191,9 @@ pub trait Si47xx {
     /// Start seeking for the next valid station in the upward frequency direction.
     async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error>;
     /// Set active mode seek band.
-    async fn band_set(&mut self, band: RadioBands) -> Result<(), Error>;
+    async fn band_set(&mut self, band: RadioBand) -> Result<(), Error>;
     /// Get active mode seek band.
-    async fn band_get(&mut self) -> Result<RadioBands, Error>;
+    async fn band_get(&mut self) -> Result<RadioBand, Error>;
     /// Tune to a specific frequency.
     async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error>;
     /// Iterate over all properties for the current mode and call `callback` for each pair.
@@ -238,10 +238,10 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxRadio<T, R, A> {
     async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
         self.seek_up().await
     }
-    async fn band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+    async fn band_set(&mut self, band: RadioBand) -> Result<(), Error> {
         self.band_set(band).await
     }
-    async fn band_get(&mut self) -> Result<RadioBands, Error> {
+    async fn band_get(&mut self) -> Result<RadioBand, Error> {
         self.band_get().await
     }
     async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
@@ -350,14 +350,14 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
-    pub async fn band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+    pub async fn band_set(&mut self, band: RadioBand) -> Result<(), Error> {
         match self {
             Si47xxRadio::Am(device) => device.am_band_set(band).await,
             Si47xxRadio::Fm(device) => device.fm_band_set(band).await,
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
-    pub async fn band_get(&mut self) -> Result<RadioBands, Error> {
+    pub async fn band_get(&mut self) -> Result<RadioBand, Error> {
         match self {
             Si47xxRadio::Am(device) => device.am_band_get().await,
             Si47xxRadio::Fm(device) => device.fm_band_get().await,
@@ -591,7 +591,7 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     ///
     /// The provided `band` must not be FM and must fit in the device AM seek
     /// property range (`149..=23000` kHz).
-    pub async fn am_band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+    pub async fn am_band_set(&mut self, band: RadioBand) -> Result<(), Error> {
         if band.is_fm() {
             return Err(Error::InvalidParameter);
         }
@@ -613,17 +613,17 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     }
 
     /// Read AM/SW/LW seek band limits and map them to a known radio band when possible.
-    pub async fn am_band_get(&mut self) -> Result<RadioBands, Error> {
+    pub async fn am_band_get(&mut self) -> Result<RadioBand, Error> {
         let bottom_khz = self.property_get(Si47xxProperty::AmSeekBandBottom).await? as u32;
         let top_khz = self.property_get(Si47xxProperty::AmSeekBandTop).await? as u32;
-        Ok(RadioBands::from_bottom_top_khz(bottom_khz, top_khz))
+        Ok(RadioBand::from_bottom_top_khz(bottom_khz, top_khz))
     }
 
     /// Set FM seek band limits from a predefined or custom FM radio band.
     ///
     /// The provided `band` must be FM and within the device FM seek property
     /// range (`64.0..=108.0` MHz encoded as `6400..=10800` in 10 kHz units).
-    pub async fn fm_band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+    pub async fn fm_band_set(&mut self, band: RadioBand) -> Result<(), Error> {
         if !band.is_fm() {
             return Err(Error::InvalidParameter);
         }
@@ -645,10 +645,10 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     }
 
     /// Read FM seek band limits and map them to a known FM radio band when possible.
-    pub async fn fm_band_get(&mut self) -> Result<RadioBands, Error> {
+    pub async fn fm_band_get(&mut self) -> Result<RadioBand, Error> {
         let bottom_10khz = self.property_get(Si47xxProperty::FmSeekBandBottom).await? as u32;
         let top_10khz = self.property_get(Si47xxProperty::FmSeekBandTop).await? as u32;
-        Ok(RadioBands::from_bottom_top_khz(
+        Ok(RadioBand::from_bottom_top_khz(
             bottom_10khz * 10,
             top_10khz * 10,
         ))
