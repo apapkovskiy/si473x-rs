@@ -1,12 +1,12 @@
-/// Predefined AM, LW, SW, and HAM tuning bands for Si47xx AM mode.
+/// Predefined FM, AM, LW, SW, and HAM tuning bands for Si47xx.
 ///
 /// Frequency ranges are in kilohertz and are based on common ITU broadcast
 /// allocations plus commonly used HF amateur radio allocations.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BandRangeKhz {
-    pub bottom_khz: u16,
-    pub top_khz: u16,
+    pub bottom_khz: u32,
+    pub top_khz: u32,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -14,6 +14,14 @@ pub struct BandRangeKhz {
 pub enum RadioBands {
     /// Unknown or custom band placeholder.
     Unknown(BandRangeKhz),
+    /// Full FM broadcast coverage used by common multi-region receivers.
+    FmBroadcast(BandRangeKhz),
+    /// FM broadcast band used in most of Europe and the Americas.
+    FmUsEu(BandRangeKhz),
+    /// FM broadcast band used in Japan.
+    FmJapan(BandRangeKhz),
+    /// Legacy OIRT FM broadcast band.
+    FmOirt(BandRangeKhz),
     /// Longwave broadcast band (Region 1 nominal plan).
     LwBroadcast(BandRangeKhz),
     /// Medium-wave AM broadcast band (global superset).
@@ -82,6 +90,22 @@ impl RadioBands {
     pub const UNKNOWN: Self = Self::Unknown(BandRangeKhz {
         bottom_khz: 0,
         top_khz: 0,
+    });
+    pub const FM_BROADCAST: Self = Self::FmBroadcast(BandRangeKhz {
+        bottom_khz: 64000,
+        top_khz: 108000,
+    });
+    pub const FM_US_EU: Self = Self::FmUsEu(BandRangeKhz {
+        bottom_khz: 87500,
+        top_khz: 108000,
+    });
+    pub const FM_JAPAN: Self = Self::FmJapan(BandRangeKhz {
+        bottom_khz: 76000,
+        top_khz: 95000,
+    });
+    pub const FM_OIRT: Self = Self::FmOirt(BandRangeKhz {
+        bottom_khz: 65000,
+        top_khz: 74000,
     });
     pub const LW_BROADCAST: Self = Self::LwBroadcast(BandRangeKhz {
         bottom_khz: 153,
@@ -200,7 +224,11 @@ impl RadioBands {
         top_khz: 29700,
     });
 
-    pub const ALL_KNOWN_BANDS: [Self; 29] = [
+    pub const ALL_KNOWN_BANDS: [Self; 33] = [
+        Self::FM_BROADCAST,
+        Self::FM_US_EU,
+        Self::FM_JAPAN,
+        Self::FM_OIRT,
         Self::LW_BROADCAST,
         Self::AM_BROADCAST,
         Self::SW_BROADCAST,
@@ -235,6 +263,10 @@ impl RadioBands {
     pub const fn range(self) -> BandRangeKhz {
         match self {
             Self::Unknown(range)
+            | Self::FmBroadcast(range)
+            | Self::FmUsEu(range)
+            | Self::FmJapan(range)
+            | Self::FmOirt(range)
             | Self::LwBroadcast(range)
             | Self::AmBroadcast(range)
             | Self::SwBroadcast(range)
@@ -268,12 +300,12 @@ impl RadioBands {
     }
 
     /// Lower edge of the band in kHz.
-    pub const fn bottom_khz(self) -> u16 {
+    pub const fn bottom_khz(self) -> u32 {
         self.range().bottom_khz
     }
 
     /// Upper edge of the band in kHz.
-    pub const fn top_khz(self) -> u16 {
+    pub const fn top_khz(self) -> u32 {
         self.range().top_khz
     }
 
@@ -287,14 +319,25 @@ impl RadioBands {
         self.top_khz() as f32 / 1000.0
     }
 
-    pub const fn unknown_with_range(bottom_khz: u16, top_khz: u16) -> Self {
+    pub const fn is_fm(self) -> bool {
+        matches!(
+            self,
+            Self::FmBroadcast(_) | Self::FmUsEu(_) | Self::FmJapan(_) | Self::FmOirt(_)
+        )
+    }
+
+    pub const fn is_am(self) -> bool {
+        !self.is_fm()
+    }
+
+    pub const fn unknown_with_range(bottom_khz: u32, top_khz: u32) -> Self {
         Self::Unknown(BandRangeKhz {
             bottom_khz,
             top_khz,
         })
     }
 
-    pub const fn from_bottom_top_khz(bottom_khz: u16, top_khz: u16) -> Self {
+    pub const fn from_bottom_top_khz(bottom_khz: u32, top_khz: u32) -> Self {
         if bottom_khz > top_khz {
             return Self::unknown_with_range(bottom_khz, top_khz);
         }
@@ -303,7 +346,7 @@ impl RadioBands {
         let mut best = Self::unknown_with_range(bottom_khz, top_khz);
         // Bands overlap (e.g. `sw_broadcast` contains many SW sub-bands), so we
         // keep the narrowest containing range to return the most specific band.
-        let mut best_width = u16::MAX;
+        let mut best_width = u32::MAX;
         while i < Self::ALL_KNOWN_BANDS.len() {
             let band = Self::ALL_KNOWN_BANDS[i];
             // `sw_broadcast` is intentionally excluded: it is a very wide umbrella
@@ -333,6 +376,10 @@ impl core::str::FromStr for RadioBands {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim() {
             "unknown" => Ok(Self::UNKNOWN),
+            "fm_broadcast" => Ok(Self::FM_BROADCAST),
+            "fm_us_eu" => Ok(Self::FM_US_EU),
+            "fm_japan" => Ok(Self::FM_JAPAN),
+            "fm_oirt" => Ok(Self::FM_OIRT),
             "lw_broadcast" => Ok(Self::LW_BROADCAST),
             "am_broadcast" => Ok(Self::AM_BROADCAST),
             "sw_broadcast" => Ok(Self::SW_BROADCAST),
@@ -371,6 +418,10 @@ impl core::fmt::Display for RadioBands {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let name = match self {
             Self::Unknown(_) => "unknown",
+            Self::FmBroadcast(_) => "fm_broadcast",
+            Self::FmUsEu(_) => "fm_us_eu",
+            Self::FmJapan(_) => "fm_japan",
+            Self::FmOirt(_) => "fm_oirt",
             Self::LwBroadcast(_) => "lw_broadcast",
             Self::AmBroadcast(_) => "am_broadcast",
             Self::SwBroadcast(_) => "sw_broadcast",
@@ -452,6 +503,9 @@ mod tests {
 
     #[test]
     fn broadcast_band_edges_are_ordered() {
+        assert!(RadioBands::FM_BROADCAST.bottom_khz() < RadioBands::FM_BROADCAST.top_khz());
+        assert!(RadioBands::FM_US_EU.bottom_khz() < RadioBands::FM_US_EU.top_khz());
+        assert!(RadioBands::FM_JAPAN.bottom_khz() < RadioBands::FM_JAPAN.top_khz());
         assert!(RadioBands::LW_BROADCAST.bottom_khz() < RadioBands::LW_BROADCAST.top_khz());
         assert!(RadioBands::AM_BROADCAST.bottom_khz() < RadioBands::AM_BROADCAST.top_khz());
         assert!(RadioBands::SW_BROADCAST.bottom_khz() < RadioBands::SW_BROADCAST.top_khz());
@@ -466,6 +520,10 @@ mod tests {
 
     #[test]
     fn parses_known_band_names() {
+        assert_eq!(
+            RadioBands::from_str("fm_us_eu").unwrap(),
+            RadioBands::FM_US_EU
+        );
         assert_eq!(
             RadioBands::from_str("lw_broadcast").unwrap(),
             RadioBands::LW_BROADCAST
@@ -495,7 +553,23 @@ mod tests {
     }
 
     #[test]
+    fn classifies_fm_and_am_bands() {
+        assert!(RadioBands::FM_US_EU.is_fm());
+        assert!(!RadioBands::FM_US_EU.is_am());
+
+        assert!(RadioBands::AM_BROADCAST.is_am());
+        assert!(!RadioBands::AM_BROADCAST.is_fm());
+
+        assert!(RadioBands::UNKNOWN.is_am());
+        assert!(!RadioBands::UNKNOWN.is_fm());
+    }
+
+    #[test]
     fn detects_band_when_range_is_inside() {
+        assert_eq!(
+            RadioBands::from_bottom_top_khz(88100, 107900),
+            RadioBands::FM_US_EU
+        );
         assert_eq!(
             RadioBands::from_bottom_top_khz(9600, 9800),
             RadioBands::SW_31M
