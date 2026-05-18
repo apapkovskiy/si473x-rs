@@ -190,6 +190,10 @@ pub trait Si47xx {
     async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error>;
     /// Start seeking for the next valid station in the upward frequency direction.
     async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error>;
+    /// Set active mode seek band.
+    async fn band_set(&mut self, band: RadioBands) -> Result<(), Error>;
+    /// Get active mode seek band.
+    async fn band_get(&mut self) -> Result<RadioBands, Error>;
     /// Tune to a specific frequency.
     async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error>;
     /// Iterate over all properties for the current mode and call `callback` for each pair.
@@ -233,6 +237,12 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxRadio<T, R, A> {
     }
     async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
         self.seek_up().await
+    }
+    async fn band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+        self.band_set(band).await
+    }
+    async fn band_get(&mut self) -> Result<RadioBands, Error> {
+        self.band_get().await
     }
     async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
         self.tune_frequency(frequency).await
@@ -337,6 +347,20 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
         match self {
             Si47xxRadio::Am(device) => device.am_seek_up().await,
             Si47xxRadio::Fm(device) => device.fm_seek_up().await,
+            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
+        }
+    }
+    pub async fn band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+        match self {
+            Si47xxRadio::Am(device) => device.am_band_set(band).await,
+            Si47xxRadio::Fm(device) => device.fm_band_set(band).await,
+            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
+        }
+    }
+    pub async fn band_get(&mut self) -> Result<RadioBands, Error> {
+        match self {
+            Si47xxRadio::Am(device) => device.am_band_get().await,
+            Si47xxRadio::Fm(device) => device.fm_band_get().await,
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
@@ -561,6 +585,73 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
         self.property_set(Si47xxProperty::AudioVolume, volume.to_raw_value())
             .await?;
         Ok(volume)
+    }
+
+    /// Set AM/SW/LW seek band limits from a predefined or custom radio band.
+    ///
+    /// The provided `band` must not be FM and must fit in the device AM seek
+    /// property range (`149..=23000` kHz).
+    pub async fn am_band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+        if band.is_fm() {
+            return Err(Error::InvalidParameter);
+        }
+
+        let bottom_khz = band.bottom_khz();
+        let top_khz = band.top_khz();
+
+        if bottom_khz > top_khz
+            || !(149..=23000).contains(&bottom_khz)
+            || !(149..=23000).contains(&top_khz)
+        {
+            return Err(Error::InvalidParameter);
+        }
+
+        self.property_set(Si47xxProperty::AmSeekBandBottom, bottom_khz as u16)
+            .await?;
+        self.property_set(Si47xxProperty::AmSeekBandTop, top_khz as u16)
+            .await
+    }
+
+    /// Read AM/SW/LW seek band limits and map them to a known radio band when possible.
+    pub async fn am_band_get(&mut self) -> Result<RadioBands, Error> {
+        let bottom_khz = self.property_get(Si47xxProperty::AmSeekBandBottom).await? as u32;
+        let top_khz = self.property_get(Si47xxProperty::AmSeekBandTop).await? as u32;
+        Ok(RadioBands::from_bottom_top_khz(bottom_khz, top_khz))
+    }
+
+    /// Set FM seek band limits from a predefined or custom FM radio band.
+    ///
+    /// The provided `band` must be FM and within the device FM seek property
+    /// range (`64.0..=108.0` MHz encoded as `6400..=10800` in 10 kHz units).
+    pub async fn fm_band_set(&mut self, band: RadioBands) -> Result<(), Error> {
+        if !band.is_fm() {
+            return Err(Error::InvalidParameter);
+        }
+
+        let bottom_10khz = band.bottom_khz() / 10;
+        let top_10khz = band.top_khz() / 10;
+
+        if bottom_10khz > top_10khz
+            || !(6400..=10800).contains(&bottom_10khz)
+            || !(6400..=10800).contains(&top_10khz)
+        {
+            return Err(Error::InvalidParameter);
+        }
+
+        self.property_set(Si47xxProperty::FmSeekBandBottom, bottom_10khz as u16)
+            .await?;
+        self.property_set(Si47xxProperty::FmSeekBandTop, top_10khz as u16)
+            .await
+    }
+
+    /// Read FM seek band limits and map them to a known FM radio band when possible.
+    pub async fn fm_band_get(&mut self) -> Result<RadioBands, Error> {
+        let bottom_10khz = self.property_get(Si47xxProperty::FmSeekBandBottom).await? as u32;
+        let top_10khz = self.property_get(Si47xxProperty::FmSeekBandTop).await? as u32;
+        Ok(RadioBands::from_bottom_top_khz(
+            bottom_10khz * 10,
+            top_10khz * 10,
+        ))
     }
 
     /// Get FM current tuned status
