@@ -260,6 +260,18 @@ impl RadioBand {
         Self::HAM_10M,
     ];
 
+    /// Call `callback` for each predefined radio band.
+    pub fn for_each<F>(mut callback: F)
+    where
+        F: FnMut(Self),
+    {
+        let mut i = 0;
+        while i < Self::ALL_KNOWN_BANDS.len() {
+            callback(Self::ALL_KNOWN_BANDS[i]);
+            i += 1;
+        }
+    }
+
     pub const fn range(self) -> BandRangeKhz {
         match self {
             Self::Unknown(range)
@@ -592,5 +604,15 @@ mod tests {
             RadioBand::from_bottom_top_khz(10000, 9000),
             RadioBand::unknown_with_range(10000, 9000)
         );
+    }
+
+    #[test]
+    fn for_each_visits_all_known_bands() {
+        let mut visited = 0;
+        RadioBand::for_each(|band| {
+            assert_ne!(band, RadioBand::UNKNOWN);
+            visited += 1;
+        });
+        assert_eq!(visited, RadioBand::ALL_KNOWN_BANDS.len());
     }
 }
