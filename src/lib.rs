@@ -9,7 +9,7 @@ use embedded_hal_async::i2c::I2c;
 mod band;
 mod property;
 
-pub use band::AmLwSwBand;
+pub use band::RadioBands;
 use property::{AM_ONLY_PROPERTIES, FM_ONLY_PROPERTIES, SHARED_PROPERTIES};
 pub use property::{Si47xxProperty, Volume};
 
