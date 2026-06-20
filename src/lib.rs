@@ -189,7 +189,9 @@ pub trait Si47xx {
     /// Retrieve the current tuning status, including frequency, signal strength, and quality.
     async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error>;
     /// Start seeking for the next valid station in the upward frequency direction.
-    async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error>;
+    async fn seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
+    where
+        F: Fn(Si47xxTuneStatus);
     /// Set active mode seek band.
     async fn band_set(&mut self, band: RadioBand) -> Result<(), Error>;
     /// Get active mode seek band.
@@ -235,8 +237,11 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxRadio<T, R, A> {
     async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error> {
         self.tune_status_get().await
     }
-    async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
-        self.seek_up().await
+    async fn seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
+    where
+        F: Fn(Si47xxTuneStatus),
+    {
+        self.seek_up(callback).await
     }
     async fn band_set(&mut self, band: RadioBand) -> Result<(), Error> {
         self.band_set(band).await
@@ -343,10 +348,13 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
-    pub async fn seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
+    pub async fn seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
+    where
+        F: Fn(Si47xxTuneStatus),
+    {
         match self {
-            Si47xxRadio::Am(device) => device.am_seek_up().await,
-            Si47xxRadio::Fm(device) => device.fm_seek_up().await,
+            Si47xxRadio::Am(device) => device.am_seek_up(callback).await,
+            Si47xxRadio::Fm(device) => device.fm_seek_up(callback).await,
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
@@ -419,6 +427,8 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
 
 impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     const I2C_ADDRESS: u8 = A;
+    const SEEK_TIMEOUT_MS: u64 = 30000;
+    const SEEK_STEP_TIMEOUT_MS: u64 = 50;
     /// Create a new Si47xxDevice driver from the given I2C peripheral and reset pin
     pub fn new(i2c: T, reset_pin: R) -> Self {
         Self { i2c, reset_pin }
@@ -670,15 +680,29 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     /// Start FM seek up
     /// Returns `Si47xxTuneStatus` on success
     /// Returns `Error` on failure
-    pub async fn fm_seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
+    pub async fn fm_seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
+    where
+        F: Fn(Si47xxTuneStatus),
+    {
         let args: [u8; 2] = [
             Si47xxCmd::FM_SEEK_START_CMD,
             Si47xxCmd::SEEK_UP | Si47xxCmd::SEEK_WRAP,
         ];
         let mut resp: [u8; Si47xxCmd::STATUS_RSP_SIZE] = [0; Si47xxCmd::STATUS_RSP_SIZE];
         self.cmd_send(&args, &mut resp).await?;
-        self.wait_for_status(Si47xxCmd::STATUS_RSP_STCINT, 5000)
-            .await?;
+        let mut timeout_ms = Self::SEEK_TIMEOUT_MS;
+        loop {
+            let status = self.get_int_status().await?;
+            if status & Si47xxCmd::STATUS_RSP_STCINT == Si47xxCmd::STATUS_RSP_STCINT {
+                break;
+            }
+            Timer::after_millis(Self::SEEK_STEP_TIMEOUT_MS).await;
+            timeout_ms = timeout_ms
+                .checked_sub(Self::SEEK_STEP_TIMEOUT_MS)
+                .ok_or(Error::NoResponse)?;
+            let tune_status = self.fm_tune_status_get().await?;
+            callback(tune_status);
+        }
         self.fm_tune_status_get().await
     }
 
@@ -720,15 +744,29 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
     /// Start AM seek up
     /// Returns `Si47xxTuneStatus` on success
     /// Returns `Error` on failure
-    pub async fn am_seek_up(&mut self) -> Result<Si47xxTuneStatus, Error> {
+    pub async fn am_seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
+    where
+        F: Fn(Si47xxTuneStatus),
+    {
         let args: [u8; 2] = [
             Si47xxCmd::AM_SEEK_START_CMD,
             Si47xxCmd::SEEK_UP | Si47xxCmd::SEEK_WRAP,
         ];
         let mut resp: [u8; Si47xxCmd::STATUS_RSP_SIZE] = [0; Si47xxCmd::STATUS_RSP_SIZE];
         self.cmd_send(&args, &mut resp).await?;
-        self.wait_for_status(Si47xxCmd::STATUS_RSP_STCINT, 5000)
-            .await?;
+        let mut timeout_ms = Self::SEEK_TIMEOUT_MS;
+        loop {
+            let status = self.get_int_status().await?;
+            if status & Si47xxCmd::STATUS_RSP_STCINT == Si47xxCmd::STATUS_RSP_STCINT {
+                break;
+            }
+            Timer::after_millis(Self::SEEK_STEP_TIMEOUT_MS).await;
+            timeout_ms = timeout_ms
+                .checked_sub(Self::SEEK_STEP_TIMEOUT_MS)
+                .ok_or(Error::NoResponse)?;
+            let tune_status = self.am_tune_status_get().await?;
+            callback(tune_status);
+        }
         self.am_tune_status_get().await
     }
 
