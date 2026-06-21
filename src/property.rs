@@ -402,6 +402,100 @@ pub enum Si47xxProperty {
     AudioVolumeMute = 0x4001,
 }
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct UnknownSi47xxProperty(pub u16);
+
+impl TryFrom<u16> for Si47xxProperty {
+    type Error = UnknownSi47xxProperty;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            0x0001 => Ok(Self::GpoIen),
+            0x0102 => Ok(Self::DigitalOutputFormat),
+            0x0104 => Ok(Self::DigitalOutputSampleRate),
+            0x0201 => Ok(Self::RefclkFreq),
+            0x0202 => Ok(Self::RefclkPrescale),
+            0x1100 => Ok(Self::FmDeemphasis),
+            0x1102 => Ok(Self::FmChannelFilter),
+            0x1105 => Ok(Self::FmBlendStereoThreshold),
+            0x1106 => Ok(Self::FmBlendMonoThreshold),
+            0x1107 => Ok(Self::FmAntennaInput),
+            0x1108 => Ok(Self::FmMaxTuneError),
+            0x1200 => Ok(Self::FmRsqIntSource),
+            0x1201 => Ok(Self::FmRsqSnrHiThreshold),
+            0x1202 => Ok(Self::FmRsqSnrLoThreshold),
+            0x1203 => Ok(Self::FmRsqRssiHiThreshold),
+            0x1204 => Ok(Self::FmRsqRssiLoThreshold),
+            0x1205 => Ok(Self::FmRsqMultipathHiThreshold),
+            0x1206 => Ok(Self::FmRsqMultipathLoThreshold),
+            0x1207 => Ok(Self::FmRsqBlendThreshold),
+            0x1300 => Ok(Self::FmSoftMuteRate),
+            0x1301 => Ok(Self::FmSoftMuteSlope),
+            0x1302 => Ok(Self::FmSoftMuteMaxAttenuation),
+            0x1303 => Ok(Self::FmSoftMuteSnrThreshold),
+            0x1304 => Ok(Self::FmSoftMuteReleaseRate),
+            0x1305 => Ok(Self::FmSoftMuteAttackRate),
+            0x1400 => Ok(Self::FmSeekBandBottom),
+            0x1401 => Ok(Self::FmSeekBandTop),
+            0x1402 => Ok(Self::FmSeekFreqSpacing),
+            0x1403 => Ok(Self::FmSeekTuneSnrThreshold),
+            0x1404 => Ok(Self::FmSeekTuneRssiThreshold),
+            0x1500 => Ok(Self::FmRdsIntSource),
+            0x1501 => Ok(Self::FmRdsIntFifoCount),
+            0x1502 => Ok(Self::FmRdsConfig),
+            0x1503 => Ok(Self::FmRdsConfidence),
+            0x1800 => Ok(Self::FmBlendRssiStereoThreshold),
+            0x1801 => Ok(Self::FmBlendRssiMonoThreshold),
+            0x1802 => Ok(Self::FmBlendRssiAttackRate),
+            0x1803 => Ok(Self::FmBlendRssiReleaseRate),
+            0x1804 => Ok(Self::FmBlendSnrStereoThreshold),
+            0x1805 => Ok(Self::FmBlendSnrMonoThreshold),
+            0x1806 => Ok(Self::FmBlendSnrAttackRate),
+            0x1807 => Ok(Self::FmBlendSnrReleaseRate),
+            0x1808 => Ok(Self::FmBlendMultipathStereoThreshold),
+            0x1809 => Ok(Self::FmBlendMultipathMonoThreshold),
+            0x180A => Ok(Self::FmBlendMultipathAttackRate),
+            0x180B => Ok(Self::FmBlendMultipathReleaseRate),
+            0x1A00 => Ok(Self::FmHicutSnrHighThreshold),
+            0x1A01 => Ok(Self::FmHicutSnrLowThreshold),
+            0x1A02 => Ok(Self::FmHicutAttackRate),
+            0x1A03 => Ok(Self::FmHicutReleaseRate),
+            0x1A04 => Ok(Self::FmHicutMultipathTriggerThreshold),
+            0x1A05 => Ok(Self::FmHicutMultipathEndThreshold),
+            0x1A06 => Ok(Self::FmHicutCutoffFrequency),
+            0x3100 => Ok(Self::AmDeemphasis),
+            0x3102 => Ok(Self::AmChannelFilter),
+            0x3103 => Ok(Self::AmAutomaticVolumeControlMaxGain),
+            0x3104 => Ok(Self::AmModeAfcSwPullInRange),
+            0x3105 => Ok(Self::AmModeAfcSwLockInRange),
+            0x3200 => Ok(Self::AmRsqIntSource),
+            0x3201 => Ok(Self::AmRsqSnrHiThreshold),
+            0x3202 => Ok(Self::AmRsqSnrLoThreshold),
+            0x3203 => Ok(Self::AmRsqRssiHiThreshold),
+            0x3204 => Ok(Self::AmRsqRssiLoThreshold),
+            0x3300 => Ok(Self::AmSoftMuteRate),
+            0x3301 => Ok(Self::AmSoftMuteSlope),
+            0x3302 => Ok(Self::AmSoftMuteMaxAttenuation),
+            0x3303 => Ok(Self::AmSoftMuteSnrThreshold),
+            0x3400 => Ok(Self::AmSeekBandBottom),
+            0x3401 => Ok(Self::AmSeekBandTop),
+            0x3402 => Ok(Self::AmSeekFreqSpacing),
+            0x3403 => Ok(Self::AmSeekTuneSnrThreshold),
+            0x3404 => Ok(Self::AmSeekTuneRssiThreshold),
+            0x4000 => Ok(Self::AudioVolume),
+            0x4001 => Ok(Self::AudioVolumeMute),
+            unknown => Err(UnknownSi47xxProperty(unknown)),
+        }
+    }
+}
+
+impl From<Si47xxProperty> for u16 {
+    fn from(value: Si47xxProperty) -> Self {
+        value as Self
+    }
+}
+
 impl Si47xxProperty {
     pub const fn is_shared(self) -> bool {
         matches!(
@@ -629,5 +723,31 @@ mod tests {
         assert_eq!(Volume(100).down(), Volume(90));
         assert_eq!(Volume(10).down(), Volume(0));
         assert_eq!(Volume(0).down(), Volume(0));
+    }
+
+    #[test]
+    fn property_try_from_u16_accepts_known_property_ids() {
+        assert_eq!(Si47xxProperty::try_from(0x0001), Ok(Si47xxProperty::GpoIen));
+        assert_eq!(
+            Si47xxProperty::try_from(0x180A),
+            Ok(Si47xxProperty::FmBlendMultipathAttackRate)
+        );
+        assert_eq!(
+            Si47xxProperty::try_from(0x4001),
+            Ok(Si47xxProperty::AudioVolumeMute)
+        );
+    }
+
+    #[test]
+    fn property_try_from_u16_rejects_unknown_property_ids() {
+        assert_eq!(
+            Si47xxProperty::try_from(0xFFFF),
+            Err(UnknownSi47xxProperty(0xFFFF))
+        );
+    }
+
+    #[test]
+    fn property_into_u16_returns_property_id() {
+        assert_eq!(u16::from(Si47xxProperty::AmSeekBandTop), 0x3401);
     }
 }
