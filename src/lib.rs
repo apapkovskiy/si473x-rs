@@ -196,6 +196,8 @@ pub trait Si47xx {
     async fn property_for_each<F>(&mut self, callback: F) -> Result<(), Error>
     where
         F: FnMut(Si47xxProperty, u16);
+    /// Set a specific property to a given value.
+    async fn property_set(&mut self, property: Si47xxProperty, value: u16) -> Result<(), Error>;
     /// Switch the device to AM mode.
     async fn am(self) -> Result<Self::Device, Error>;
     /// Switch the device to FM mode.
@@ -242,6 +244,9 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxRadio<T, R, A> {
         F: FnMut(Si47xxProperty, u16),
     {
         self.property_for_each(callback).await
+    }
+    async fn property_set(&mut self, property: Si47xxProperty, value: u16) -> Result<(), Error> {
+        self.property_set(property, value).await
     }
     async fn am(self) -> Result<Self::Device, Error> {
         self.am().await
@@ -374,6 +379,17 @@ impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
                 }
                 Ok(())
             }
+            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
+        }
+    }
+    pub async fn property_set(
+        &mut self,
+        property: Si47xxProperty,
+        value: u16,
+    ) -> Result<(), Error> {
+        match self {
+            Si47xxRadio::Am(device) => device.property_set(property, value).await,
+            Si47xxRadio::Fm(device) => device.property_set(property, value).await,
             Si47xxRadio::Off(_) => Err(Error::PoweredDown),
         }
     }
