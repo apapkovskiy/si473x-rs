@@ -342,6 +342,45 @@ impl RadioBand {
         !self.is_fm()
     }
 
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unknown(_) => "unknown",
+            Self::FmBroadcast(_) => "fm_broadcast",
+            Self::FmUsEu(_) => "fm_us_eu",
+            Self::FmJapan(_) => "fm_japan",
+            Self::FmOirt(_) => "fm_oirt",
+            Self::LwBroadcast(_) => "lw_broadcast",
+            Self::AmBroadcast(_) => "am_broadcast",
+            Self::SwBroadcast(_) => "sw_broadcast",
+            Self::Sw120m(_) => "sw_120m",
+            Self::Sw90m(_) => "sw_90m",
+            Self::Sw75m(_) => "sw_75m",
+            Self::Sw60m(_) => "sw_60m",
+            Self::Sw49m(_) => "sw_49m",
+            Self::Sw41m(_) => "sw_41m",
+            Self::Sw31m(_) => "sw_31m",
+            Self::Sw25m(_) => "sw_25m",
+            Self::Sw22m(_) => "sw_22m",
+            Self::Sw19m(_) => "sw_19m",
+            Self::Sw16m(_) => "sw_16m",
+            Self::Sw15m(_) => "sw_15m",
+            Self::Sw13m(_) => "sw_13m",
+            Self::Sw11m(_) => "sw_11m",
+            Self::Ham2200m(_) => "ham_2200m",
+            Self::Ham630m(_) => "ham_630m",
+            Self::Ham160m(_) => "ham_160m",
+            Self::Ham80m(_) => "ham_80m",
+            Self::Ham60m(_) => "ham_60m",
+            Self::Ham40m(_) => "ham_40m",
+            Self::Ham30m(_) => "ham_30m",
+            Self::Ham20m(_) => "ham_20m",
+            Self::Ham17m(_) => "ham_17m",
+            Self::Ham15m(_) => "ham_15m",
+            Self::Ham12m(_) => "ham_12m",
+            Self::Ham10m(_) => "ham_10m",
+        }
+    }
+
     pub const fn unknown_with_range(bottom_khz: u32, top_khz: u32) -> Self {
         Self::Unknown(BandRangeKhz {
             bottom_khz,
@@ -428,47 +467,10 @@ impl core::str::FromStr for RadioBand {
 
 impl core::fmt::Display for RadioBand {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let name = match self {
-            Self::Unknown(_) => "unknown",
-            Self::FmBroadcast(_) => "fm_broadcast",
-            Self::FmUsEu(_) => "fm_us_eu",
-            Self::FmJapan(_) => "fm_japan",
-            Self::FmOirt(_) => "fm_oirt",
-            Self::LwBroadcast(_) => "lw_broadcast",
-            Self::AmBroadcast(_) => "am_broadcast",
-            Self::SwBroadcast(_) => "sw_broadcast",
-            Self::Sw120m(_) => "sw_120m",
-            Self::Sw90m(_) => "sw_90m",
-            Self::Sw75m(_) => "sw_75m",
-            Self::Sw60m(_) => "sw_60m",
-            Self::Sw49m(_) => "sw_49m",
-            Self::Sw41m(_) => "sw_41m",
-            Self::Sw31m(_) => "sw_31m",
-            Self::Sw25m(_) => "sw_25m",
-            Self::Sw22m(_) => "sw_22m",
-            Self::Sw19m(_) => "sw_19m",
-            Self::Sw16m(_) => "sw_16m",
-            Self::Sw15m(_) => "sw_15m",
-            Self::Sw13m(_) => "sw_13m",
-            Self::Sw11m(_) => "sw_11m",
-            Self::Ham2200m(_) => "ham_2200m",
-            Self::Ham630m(_) => "ham_630m",
-            Self::Ham160m(_) => "ham_160m",
-            Self::Ham80m(_) => "ham_80m",
-            Self::Ham60m(_) => "ham_60m",
-            Self::Ham40m(_) => "ham_40m",
-            Self::Ham30m(_) => "ham_30m",
-            Self::Ham20m(_) => "ham_20m",
-            Self::Ham17m(_) => "ham_17m",
-            Self::Ham15m(_) => "ham_15m",
-            Self::Ham12m(_) => "ham_12m",
-            Self::Ham10m(_) => "ham_10m",
-        };
-
         write!(
             f,
             "{} ({:.3}-{:.3} MHz)",
-            name,
+            self.as_str(),
             self.bottom_mhz(),
             self.top_mhz()
         )
@@ -549,6 +551,15 @@ mod tests {
     fn unknown_input_maps_to_unknown_band() {
         assert_eq!(RadioBand::from_str("fm").unwrap(), RadioBand::UNKNOWN);
         assert_eq!(RadioBand::from_str("sw_50m").unwrap(), RadioBand::UNKNOWN);
+    }
+
+    #[test]
+    fn converts_band_to_str() {
+        assert_eq!(RadioBand::UNKNOWN.as_str(), "unknown");
+        assert_eq!(RadioBand::FM_US_EU.as_str(), "fm_us_eu");
+        assert_eq!(RadioBand::LW_BROADCAST.as_str(), "lw_broadcast");
+        assert_eq!(RadioBand::SW_31M.as_str(), "sw_31m");
+        assert_eq!(RadioBand::HAM_20M.as_str(), "ham_20m");
     }
 
     #[test]
