@@ -460,7 +460,7 @@ impl core::str::FromStr for RadioBand {
             "ham_15m" => Ok(Self::HAM_15M),
             "ham_12m" => Ok(Self::HAM_12M),
             "ham_10m" => Ok(Self::HAM_10M),
-            _ => Ok(Self::UNKNOWN),
+            _ => Err(ParseRadioBandsError),
         }
     }
 }
@@ -548,9 +548,9 @@ mod tests {
     }
 
     #[test]
-    fn unknown_input_maps_to_unknown_band() {
-        assert_eq!(RadioBand::from_str("fm").unwrap(), RadioBand::UNKNOWN);
-        assert_eq!(RadioBand::from_str("sw_50m").unwrap(), RadioBand::UNKNOWN);
+    fn unknown_input_returns_parse_error() {
+        assert!(RadioBand::from_str("fm").is_err());
+        assert!(RadioBand::from_str("sw_50m").is_err());
     }
 
     #[test]
