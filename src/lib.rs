@@ -146,35 +146,54 @@ impl Si47xxCmd {
     pub const STATUS_RSP_STCINT: u8 = 0x01;
 }
 
-/// Si47xx device driver
+/// Current operating mode of the radio.
+///
+/// `Si47xxRadio` owns the I2C bus and reset pin for its whole lifetime; this
+/// mode marker records whether commands should be dispatched as AM/SW/LW, FM,
+/// or rejected because the device is powered down.
 #[derive(Debug)]
-pub struct Si47xxDevice<T: I2c, R: OutputPin, const A: u8 = 0x11> {
+pub enum Si47xxRadioMode {
+    Am,
+    Fm,
+    Off,
+}
+
+/// Si47xx radio driver.
+///
+/// The driver keeps ownership of the transport and reset pin while mode changes
+/// mutate internal state. Newly created instances start in [`Si47xxRadioMode::Off`]
+/// and must be switched to [`Si47xxRadioMode::Am`] or [`Si47xxRadioMode::Fm`] with
+/// [`Si47xxRadio::am`] or [`Si47xxRadio::fm`] before tune, seek, band, or audio
+/// operations are available.
+#[derive(Debug)]
+pub struct Si47xxRadio<T: I2c, R: OutputPin, const A: u8 = 0x11> {
     pub(crate) i2c: T,
     reset_pin: R,
+    mode: Si47xxRadioMode,
 }
 
 /// Asynchronous high-level interface for controlling Si47xx-based radio devices.
 ///
-/// This trait mirrors the public API of [`Si47xxRadio`] and is implemented for it,
-/// allowing applications to depend on this trait instead of the concrete
-/// [`Si47xxRadio`] type. This is useful when you want to:
+/// This trait mirrors the mode-aware public API of [`Si47xxRadio`] and is
+/// implemented for it, allowing applications to depend on this trait instead of
+/// the concrete [`Si47xxRadio`] type. This is useful when you want to:
 ///
 /// - Write code that is generic over different Si47xx driver implementations.
 /// - Abstract over the concrete radio type in higher-level components.
 ///
+/// Mode transitions mutate the existing driver instead of consuming and returning
+/// it, so callers can keep a single driver value while switching between AM/SW/LW,
+/// FM, and powered-down states.
+///
 /// Most users who work directly with the driver can use [`Si47xxRadio`] itself.
-/// Use [`Si47xx`] when you need a trait object or a generic bound instead of a
-/// concrete type.
+/// Use [`Si47xx`] when you need a generic bound instead of the concrete type.
 pub trait Si47xx {
-    /// Concrete device type returned when switching to a specific mode (AM/FM).
-    type Device;
-
     /// Retrieve the silicon and firmware revision information from the device.
     async fn revision_get(&mut self) -> Result<Si47xxRevision, Error>;
-    /// Power the device down into a low-power state.
-    async fn power_down(self) -> Result<Self::Device, Error>;
-    /// Perform a hardware reset of the device.
-    async fn reset(self) -> Self::Device;
+    /// Power the device down into a low-power state and mark the driver as off.
+    async fn power_down(&mut self) -> Result<(), Error>;
+    /// Perform a hardware reset of the device and mark the driver as off.
+    async fn reset(&mut self);
     /// Enable audio output from the device.
     async fn sound_on(&mut self) -> Result<(), Error>;
     /// Disable audio output from the device.
@@ -204,262 +223,180 @@ pub trait Si47xx {
         F: FnMut(Si47xxProperty, u16);
     /// Set a specific property to a given value.
     async fn property_set(&mut self, property: Si47xxProperty, value: u16) -> Result<(), Error>;
-    /// Switch the device to AM mode.
-    async fn am(self) -> Result<Self::Device, Error>;
-    /// Switch the device to FM mode.
-    async fn fm(self) -> Result<Self::Device, Error>;
+    /// Switch the device to AM/SW/LW receive mode.
+    async fn am(&mut self) -> Result<(), Error>;
+    /// Switch the device to FM receive mode.
+    async fn fm(&mut self) -> Result<(), Error>;
 }
 
 impl<T: I2c, R: OutputPin, const A: u8> Si47xx for Si47xxRadio<T, R, A> {
-    type Device = Si47xxRadio<T, R, A>;
     async fn revision_get(&mut self) -> Result<Si47xxRevision, Error> {
-        self.revision_get().await
+        match self.mode {
+            Si47xxRadioMode::Am | Si47xxRadioMode::Fm => self.revision_get().await,
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+        }
     }
-    async fn power_down(self) -> Result<Self::Device, Error> {
-        self.power_down().await
+    async fn power_down(&mut self) -> Result<(), Error> {
+        self.mode = match self.mode {
+            Si47xxRadioMode::Off => return Ok(()),
+            _ => {
+                self.power_down().await?;
+                Si47xxRadioMode::Off
+            }
+        };
+        Ok(())
     }
-    async fn reset(self) -> Self::Device {
-        self.reset().await
+    async fn reset(&mut self) {
+        self.reset().await;
+        self.mode = Si47xxRadioMode::Off;
     }
     async fn sound_on(&mut self) -> Result<(), Error> {
-        self.sound_on().await
+        match self.mode {
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+            _ => self.sound_on().await,
+        }
     }
     async fn sound_off(&mut self) -> Result<(), Error> {
-        self.sound_off().await
+        match self.mode {
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+            _ => self.sound_off().await,
+        }
     }
     async fn volume_set(&mut self, volume: Volume) -> Result<(), Error> {
-        self.volume_set(volume).await
+        match self.mode {
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+            _ => self.volume_set(volume).await,
+        }
     }
     async fn volume_up(&mut self) -> Result<Volume, Error> {
-        self.volume_up().await
+        match self.mode {
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+            _ => self.volume_up().await,
+        }
     }
     async fn volume_down(&mut self) -> Result<Volume, Error> {
-        self.volume_down().await
+        match self.mode {
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+            _ => self.volume_down().await,
+        }
     }
     async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error> {
-        self.tune_status_get().await
+        match self.mode {
+            Si47xxRadioMode::Am => self.am_tune_status_get().await,
+            Si47xxRadioMode::Fm => self.fm_tune_status_get().await,
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+        }
     }
     async fn seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
     where
         F: Fn(Si47xxTuneStatus),
     {
-        self.seek_up(callback).await
+        match self.mode {
+            Si47xxRadioMode::Am => self.am_seek_up(callback).await,
+            Si47xxRadioMode::Fm => self.fm_seek_up(callback).await,
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+        }
     }
     async fn band_set(&mut self, band: RadioBand) -> Result<(), Error> {
-        self.band_set(band).await
+        match self.mode {
+            Si47xxRadioMode::Am => self.am_band_set(band).await,
+            Si47xxRadioMode::Fm => self.fm_band_set(band).await,
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+        }
     }
     async fn band_get(&mut self) -> Result<RadioBand, Error> {
-        self.band_get().await
+        match self.mode {
+            Si47xxRadioMode::Am => self.am_band_get().await,
+            Si47xxRadioMode::Fm => self.fm_band_get().await,
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+        }
     }
     async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
-        self.tune_frequency(frequency).await
+        match self.mode {
+            Si47xxRadioMode::Am => self.am_tune_frequency(frequency).await,
+            Si47xxRadioMode::Fm => self.fm_tune_frequency(frequency).await,
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+        }
     }
-    async fn property_for_each<F>(&mut self, callback: F) -> Result<(), Error>
+    async fn property_for_each<F>(&mut self, mut callback: F) -> Result<(), Error>
     where
         F: FnMut(Si47xxProperty, u16),
     {
-        self.property_for_each(callback).await
-    }
-    async fn property_set(&mut self, property: Si47xxProperty, value: u16) -> Result<(), Error> {
-        self.property_set(property, value).await
-    }
-    async fn am(self) -> Result<Self::Device, Error> {
-        self.am().await
-    }
-    async fn fm(self) -> Result<Self::Device, Error> {
-        self.fm().await
-    }
-}
-
-/// Si47xx device enum for AM, FM, and Off (powered-down) states
-/// This enum encapsulates the Si47xxDevice for AM and FM modes, as well as an
-/// Off state, allowing users to switch between modes while using the same interface.
-#[derive(Debug)]
-pub enum Si47xxRadio<T: I2c, R: OutputPin, const A: u8> {
-    Am(Si47xxDevice<T, R, A>),
-    Fm(Si47xxDevice<T, R, A>),
-    Off(Si47xxDevice<T, R, A>),
-}
-
-impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
-    pub async fn revision_get(&mut self) -> Result<Si47xxRevision, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.revision_get().await,
-            Si47xxRadio::Fm(device) => device.revision_get().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn power_down(self) -> Result<Self, Error> {
-        match self {
-            Si47xxRadio::Am(mut device) => {
-                device.power_down().await?;
-                Ok(Si47xxRadio::Off(device))
-            }
-            Si47xxRadio::Fm(mut device) => {
-                device.power_down().await?;
-                Ok(Si47xxRadio::Off(device))
-            }
-            Si47xxRadio::Off(device) => Ok(Si47xxRadio::Off(device)),
-        }
-    }
-    pub async fn reset(self) -> Self {
-        let mut device = match self {
-            Si47xxRadio::Am(device) => device,
-            Si47xxRadio::Fm(device) => device,
-            Si47xxRadio::Off(device) => device,
-        };
-        device.reset().await;
-        Si47xxRadio::Off(device)
-    }
-    pub async fn sound_on(&mut self) -> Result<(), Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.sound_on().await,
-            Si47xxRadio::Fm(device) => device.sound_on().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn sound_off(&mut self) -> Result<(), Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.sound_off().await,
-            Si47xxRadio::Fm(device) => device.sound_off().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn volume_set(&mut self, volume: Volume) -> Result<(), Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.volume_set(volume).await,
-            Si47xxRadio::Fm(device) => device.volume_set(volume).await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn volume_up(&mut self) -> Result<Volume, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.volume_up().await,
-            Si47xxRadio::Fm(device) => device.volume_up().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn volume_down(&mut self) -> Result<Volume, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.volume_down().await,
-            Si47xxRadio::Fm(device) => device.volume_down().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn tune_status_get(&mut self) -> Result<Si47xxTuneStatus, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.am_tune_status_get().await,
-            Si47xxRadio::Fm(device) => device.fm_tune_status_get().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn seek_up<F>(&mut self, callback: F) -> Result<Si47xxTuneStatus, Error>
-    where
-        F: Fn(Si47xxTuneStatus),
-    {
-        match self {
-            Si47xxRadio::Am(device) => device.am_seek_up(callback).await,
-            Si47xxRadio::Fm(device) => device.fm_seek_up(callback).await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn band_set(&mut self, band: RadioBand) -> Result<(), Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.am_band_set(band).await,
-            Si47xxRadio::Fm(device) => device.fm_band_set(band).await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn band_get(&mut self) -> Result<RadioBand, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.am_band_get().await,
-            Si47xxRadio::Fm(device) => device.fm_band_get().await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn tune_frequency(&mut self, frequency: f32) -> Result<Si47xxTuneStatus, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.am_tune_frequency(frequency).await,
-            Si47xxRadio::Fm(device) => device.fm_tune_frequency(frequency).await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
-        }
-    }
-    pub async fn property_for_each<F>(&mut self, mut callback: F) -> Result<(), Error>
-    where
-        F: FnMut(Si47xxProperty, u16),
-    {
-        match self {
-            Si47xxRadio::Am(device) => {
+        match self.mode {
+            Si47xxRadioMode::Am => {
                 for property in SHARED_PROPERTIES {
-                    let value = device.property_get(property).await?;
+                    let value = self.property_get(property).await?;
                     callback(property, value);
                 }
                 for property in AM_ONLY_PROPERTIES {
-                    let value = device.property_get(property).await?;
+                    let value = self.property_get(property).await?;
                     callback(property, value);
                 }
                 Ok(())
             }
-            Si47xxRadio::Fm(device) => {
+            Si47xxRadioMode::Fm => {
                 for property in SHARED_PROPERTIES {
-                    let value = device.property_get(property).await?;
+                    let value = self.property_get(property).await?;
                     callback(property, value);
                 }
                 for property in FM_ONLY_PROPERTIES {
-                    let value = device.property_get(property).await?;
+                    let value = self.property_get(property).await?;
                     callback(property, value);
                 }
                 Ok(())
             }
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
         }
     }
-    pub async fn property_set(
-        &mut self,
-        property: Si47xxProperty,
-        value: u16,
-    ) -> Result<(), Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.property_set(property, value).await,
-            Si47xxRadio::Fm(device) => device.property_set(property, value).await,
-            Si47xxRadio::Off(_) => Err(Error::PoweredDown),
+    async fn property_set(&mut self, property: Si47xxProperty, value: u16) -> Result<(), Error> {
+        match self.mode {
+            Si47xxRadioMode::Off => Err(Error::PoweredDown),
+            _ => self.property_set(property, value).await,
         }
     }
-    pub async fn am(self) -> Result<Self, Error> {
-        match self {
-            Si47xxRadio::Am(_) => Ok(self),
-            Si47xxRadio::Fm(device) => device.am().await,
-            Si47xxRadio::Off(device) => device.am().await,
+    async fn am(&mut self) -> Result<(), Error> {
+        match self.mode {
+            Si47xxRadioMode::Am => Ok(()),
+            Si47xxRadioMode::Fm => self.am().await,
+            Si47xxRadioMode::Off => self.am().await,
         }
     }
-    pub async fn fm(self) -> Result<Self, Error> {
-        match self {
-            Si47xxRadio::Am(device) => device.fm().await,
-            Si47xxRadio::Fm(_) => Ok(self),
-            Si47xxRadio::Off(device) => device.fm().await,
+    async fn fm(&mut self) -> Result<(), Error> {
+        match self.mode {
+            Si47xxRadioMode::Am => self.fm().await,
+            Si47xxRadioMode::Fm => Ok(()),
+            Si47xxRadioMode::Off => self.fm().await,
         }
     }
 }
 
-impl<T: I2c, R: OutputPin, const A: u8> Si47xxDevice<T, R, A> {
+impl<T: I2c, R: OutputPin, const A: u8> Si47xxRadio<T, R, A> {
     const I2C_ADDRESS: u8 = A;
     const SEEK_TIMEOUT_MS: u64 = 30000;
     const SEEK_STEP_TIMEOUT_MS: u64 = 50;
-    /// Create a new Si47xxDevice driver from the given I2C peripheral and reset pin
+    /// Create a new powered-down radio driver from the given I2C peripheral and reset pin.
     pub fn new(i2c: T, reset_pin: R) -> Self {
-        Self { i2c, reset_pin }
+        Self {
+            i2c,
+            reset_pin,
+            mode: Si47xxRadioMode::Off,
+        }
     }
 
-    pub async fn am(mut self) -> Result<Si47xxRadio<T, R, A>, Error> {
+    /// Reinitialize the device in AM/SW/LW receive mode.
+    pub async fn am(&mut self) -> Result<(), Error> {
         self.power_down().await?;
         self.init_am().await?;
-        Ok(Si47xxRadio::Am(self))
+        self.mode = Si47xxRadioMode::Am;
+        Ok(())
     }
 
-    pub async fn fm(mut self) -> Result<Si47xxRadio<T, R, A>, Error> {
+    /// Reinitialize the device in FM receive mode.
+    pub async fn fm(&mut self) -> Result<(), Error> {
         self.power_down().await?;
         self.init_fm().await?;
-        Ok(Si47xxRadio::Fm(self))
+        self.mode = Si47xxRadioMode::Fm;
+        Ok(())
     }
 
     /// Get device revision information
